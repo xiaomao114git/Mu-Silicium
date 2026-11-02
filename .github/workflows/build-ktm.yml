@@ -2,6 +2,12 @@ name: Build UEFI for ktm
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'Platforms/OnePlus/ktmPkg/**'
+      - 'Resources/Configs/ktm.toml'
+      - 'Resources/DTBs/ktm.dtb'
+      - '.github/workflows/build-ktm.yml'
 
 jobs:
   build:
