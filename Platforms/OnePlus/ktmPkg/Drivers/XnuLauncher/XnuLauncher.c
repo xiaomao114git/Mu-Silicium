@@ -18,6 +18,7 @@
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/PrintLib.h>
 #include <Protocol/FirmwareVolume2.h>
 
 #define XNU_LOADER_GUID \
