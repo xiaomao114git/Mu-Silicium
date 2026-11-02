@@ -29,10 +29,13 @@ gMemoryDescriptor[] = {
   {"Kernel",             0xA8000000, 0x10000000, AddMem, SYS_MEM, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
   {"XBL_Ramdump",        0xB8000000, 0x001C0000, AddMem, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"DBI_Dump",           0xB81C0000, 0x00F00000, NoHob,  MMAP_IO, INITIALIZED, Conv,   UNCACHED_UNBUFFERED_XN},
-    // Ace 6 reserves 0xbd930000+0x800000 for gunyah_hyp_region1, which neither dodge nor
-  // annibale has. The inherited DXE heap started at 0xB90C0000 and would have covered it.
-  // Start after that region and stop short of trust_ui_vm at 0xF3800000.
-  {"DXE_Heap",           0xBE130000, 0x35600000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK_XN},
+    // This phone's own /memory declares these usable windows (from /sys/firmware/fdt):
+  //   0xb81c0000 + 0x5770000  -> 0xBD930000   (87 MB)
+  //   0xbe360000 + 0x16ac3000 -> 0xD4E23000  (363 MB)
+  // The inherited 0xB90C0000+0x1D500000 ran straight through 0xBD930000..0xBE360000,
+  // which is the gunyah_hyp_region1 reservation plus a hole with no DRAM behind it.
+  // Use the large contiguous window and stay inside it.
+  {"DXE_Heap",           0xBE360000, 0x16000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK_XN},
   {"Display_Reserved",   0xFC800000, 0x02B00000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
 
   // Other Memory Regions
