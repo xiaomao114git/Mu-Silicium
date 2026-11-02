@@ -684,6 +684,28 @@
 <details>
 <summary><b><strong>OnePlus Devices</strong></b></summary>
 
+## OnePlus Ace 6 / Ace 6
+
+**State:** Active <br>
+**Codename:** ktm
+
+**Contributors:** [xiaomao114git](https://github.com/xiaomao114git)
+
+### UEFI Status
+
+| Feature            | Description | State |
+|:-------------------|:-------------|:-----:|
+| Display            |              | ❌    |
+| Internal Storage   |              | ❌    |
+| Side Buttons       |              | ❌    |
+| USB Host Mode      |              | ❌    |
+| USB Device Mode    |              | ❌    |
+| USB Power Delivery |              | ❌    |
+| Mass Storage       |              | ❌    |
+| Windows Boot       |              | ❌    |
+| Linux Boot         |              | ❌    |
+
+
 ## OnePlus 15
 
 <img align="right" src="Resources/Pictures/OnePlus-15.png" width="400" alt="Preview">
