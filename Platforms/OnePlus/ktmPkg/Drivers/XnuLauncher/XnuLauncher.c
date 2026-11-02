@@ -45,6 +45,8 @@ ReadXnuLoader (
   UINTN                         Index;
   EFI_FIRMWARE_VOLUME2_PROTOCOL *Fv;
   UINT32                        AuthenticationStatus;
+  EFI_FV_FILETYPE               FoundType;
+  EFI_FV_FILE_ATTRIBUTES        FileAttributes;
 
   *Buffer = NULL;
   *Size   = 0;
@@ -72,12 +74,15 @@ ReadXnuLoader (
     }
 
     AuthenticationStatus = 0;
+    FoundType            = EFI_FV_FILETYPE_ALL;
+    FileAttributes       = 0;
     Status = Fv->ReadFile (
                    Fv,
                    &mXnuLoaderGuid,
                    Buffer,
                    Size,
-                   NULL,
+                   &FoundType,
+                   &FileAttributes,
                    &AuthenticationStatus
                    );
     if (!EFI_ERROR (Status) && (*Buffer != NULL) && (*Size != 0)) {
