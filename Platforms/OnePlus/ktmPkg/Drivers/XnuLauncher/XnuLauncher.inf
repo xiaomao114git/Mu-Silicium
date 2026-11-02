@@ -22,6 +22,7 @@
 
 [LibraryClasses]
   DebugLib
+  PrintLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   MemoryAllocationLib

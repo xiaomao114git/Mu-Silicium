@@ -3,8 +3,10 @@
 
   Mu-Silicium's BDS does not auto-start FILE APPLICATION entries contained in the
   firmware volume, so this driver finds the embedded xnuloader by GUID, loads it
-  with LoadImage() and hands control to it with StartImage(). That is the handoff
-  point where the UEFI firmware gives way to the XNU boot loader.
+  with LoadImage() and hands control to it with StartImage().
+
+  Every step also goes to ConOut: the phone has no serial console during bring-up,
+  so the screen is the only place these diagnostics can be read.
 
   The loader is embedded by ktmPkg/Include/RAW.inc as
     FILE APPLICATION = 3E7A9C41-58B2-4D6F-9A03-C1D5E8F24B70 { SECTION PE32 = ... }
@@ -23,14 +25,20 @@
 
 STATIC EFI_GUID  mXnuLoaderGuid = XNU_LOADER_GUID;
 
+STATIC
+VOID
+Say (
+  IN CONST CHAR16  *Text
+  )
+{
+  if ((gST != NULL) && (gST->ConOut != NULL)) {
+    gST->ConOut->OutputString (gST->ConOut, (CHAR16 *)Text);
+  }
+  DEBUG ((DEBUG_INFO, "%s", Text));
+}
+
 /**
   Locate the xnuloader image in any firmware volume.
-
-  @param[out] Buffer   Receives a pool allocation holding the PE image.
-  @param[out] Size     Receives the image size in bytes.
-
-  @retval EFI_SUCCESS  Image found and read.
-  @retval EFI_NOT_FOUND  No firmware volume carried the file.
 **/
 STATIC
 EFI_STATUS
@@ -47,6 +55,7 @@ ReadXnuLoader (
   UINT32                        AuthenticationStatus;
   EFI_FV_FILETYPE               FoundType;
   EFI_FV_FILE_ATTRIBUTES        FileAttributes;
+  CHAR16                        Line[96];
 
   *Buffer = NULL;
   *Size   = 0;
@@ -59,9 +68,12 @@ ReadXnuLoader (
                   &Handles
                   );
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "XnuLauncher: no firmware volumes (%r)\n", Status));
+    Say (L"XnuLauncher: no firmware volume protocol\r\n");
     return Status;
   }
+
+  UnicodeSPrint (Line, sizeof (Line), L"XnuLauncher: %d firmware volume(s)\r\n", (UINT32)HandleCount);
+  Say (Line);
 
   for (Index = 0; Index < HandleCount; Index++) {
     Status = gBS->HandleProtocol (
@@ -86,28 +98,27 @@ ReadXnuLoader (
                    &AuthenticationStatus
                    );
     if (!EFI_ERROR (Status) && (*Buffer != NULL) && (*Size != 0)) {
-      DEBUG ((
-        DEBUG_INFO,
-        "XnuLauncher: xnuloader found in FV %d, %lu bytes\n",
+      UnicodeSPrint (
+        Line,
+        sizeof (Line),
+        L"XnuLauncher: loader in FV %d, %d bytes, type %d\r\n",
         (UINT32)Index,
-        (UINT64)*Size
-        ));
+        (UINT32)*Size,
+        (UINT32)FoundType
+        );
+      Say (Line);
       gBS->FreePool (Handles);
       return EFI_SUCCESS;
     }
   }
 
   gBS->FreePool (Handles);
-  DEBUG ((DEBUG_WARN, "XnuLauncher: xnuloader not present in any FV\n"));
+  Say (L"XnuLauncher: xnuloader NOT found in any FV\r\n");
   return EFI_NOT_FOUND;
 }
 
 /**
   Driver entry point: load and start xnuloader.
-
-  LoadImage() goes through the normal UEFI image path so the loader keeps the
-  boot services it expects. If it returns, the handoff did not happen and this
-  driver reports the status rather than pretending success.
 **/
 EFI_STATUS
 EFIAPI
@@ -120,8 +131,9 @@ XnuLauncherEntry (
   VOID       *Image;
   UINTN       ImageSize;
   EFI_HANDLE  LoaderHandle;
+  CHAR16      Line[96];
 
-  DEBUG ((DEBUG_INFO, "XnuLauncher: starting the XNU loader handoff\n"));
+  Say (L"XnuLauncher: entry\r\n");
 
   Status = ReadXnuLoader (&Image, &ImageSize);
   if (EFI_ERROR (Status)) {
@@ -138,16 +150,18 @@ XnuLauncherEntry (
                   &LoaderHandle
                   );
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "XnuLauncher: LoadImage failed (%r)\n", Status));
+    UnicodeSPrint (Line, sizeof (Line), L"XnuLauncher: LoadImage failed %r\r\n", Status);
+    Say (Line);
     gBS->FreePool (Image);
     return Status;
   }
 
-  /* The loader keeps its own copy once loaded */
+  Say (L"XnuLauncher: starting loader\r\n");
   gBS->FreePool (Image);
 
   Status = gBS->StartImage (LoaderHandle, NULL, NULL);
-  DEBUG ((DEBUG_INFO, "XnuLauncher: xnuloader returned (%r)\n", Status));
+  UnicodeSPrint (Line, sizeof (Line), L"XnuLauncher: loader returned %r\r\n", Status);
+  Say (Line);
 
   return EFI_SUCCESS;
 }
