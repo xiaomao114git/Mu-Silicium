@@ -136,6 +136,20 @@ XnuLauncherEntry (
 
   Say (L"XnuLauncher: entry\r\n");
 
+  //
+  // Bring-up diagnostic: hold here so the message cannot be overwritten by the
+  // BDS logo and a screen clear. If this line is never seen, the driver was not
+  // dispatched at all. Remove the loop once dispatch is confirmed.
+  //
+  {
+    UINTN  Waited;
+    for (Waited = 0; Waited < 30; Waited++) {
+      gBS->Stall (1000000);   /* 1 s per iteration, 30 s total */
+      Say (L".");
+    }
+    Say (L"\r\nXnuLauncher: continuing\r\n");
+  }
+
   Status = ReadXnuLoader (&Image, &ImageSize);
   if (EFI_ERROR (Status)) {
     return EFI_SUCCESS;   /* no loader embedded: stay out of the boot path */
