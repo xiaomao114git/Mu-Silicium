@@ -1,0 +1,33 @@
+## @file
+#  XnuLauncher - DXE driver that loads and starts the embedded HakiOS xnuloader.
+#
+#  Mu-Silicium's BDS does not auto-start FILE APPLICATION entries inside the
+#  firmware volume, so this driver performs the handoff to XNU itself.
+##
+
+[Defines]
+  INF_VERSION                    = 0x0010005
+  BASE_NAME                      = XnuLauncher
+  FILE_GUID                      = 6B2D94F7-1C58-4A30-B7E1-9D3E5A8C4602
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = XnuLauncherEntry
+
+[Sources]
+  XnuLauncher.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  DebugLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  MemoryAllocationLib
+
+[Protocols]
+  gEfiFirmwareVolume2ProtocolGuid
+
+[Depex]
+  TRUE

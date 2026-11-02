@@ -80,6 +80,12 @@
 
 [Components]
   #
+  # HakiOS handoff: loads the embedded xnuloader and starts it from DXE.
+  # BDS does not auto-start FILE APPLICATION entries from the FV.
+  #
+  ktmPkg/Drivers/XnuLauncher/XnuLauncher.inf
+
+  #
   # ACPI Tables
   #
   #ktm/AcpiTables.inf
