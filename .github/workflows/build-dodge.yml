@@ -1,0 +1,48 @@
+name: Build UEFI for dodge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Platforms/OnePlus/dodgePkg/**'
+      - 'Resources/Configs/dodge.toml'
+      - 'Resources/DTBs/dodge.dtb'
+      - '.github/workflows/build-dodge.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Show what will be built
+        run: |
+          echo "device: ktm"
+          sed -n '/^\[Defines\]/,/^!/p' Platforms/OnePlus/ktmPkg/ktm.dsc | head -20
+          echo "--- panel binaries referenced ---"
+          grep -m3 'Binaries/' Platforms/OnePlus/ktmPkg/Include/RAW.inc
+          echo "--- is AA605 panel present? ---"
+          ls -la Binaries/dodge/RawFiles/Panel_AA605_P_7_A0020_dsc_cmd.xml
+
+      - name: Install dependencies
+        env:
+          CI_BUILD: true
+        run: bash ./setup_env.sh -p apt
+
+      - name: Build UEFI for dodge
+        run: python3 build_uefi.py -d dodge -r DEBUG
+
+      - name: List build output
+        if: always()
+        run: ls -la Mu-* 2>/dev/null || echo "no Mu-* produced"
+
+      - name: Upload UEFI images
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dodge-uefi-images
+          path: Mu-*
+          compression-level: 9
+          if-no-files-found: warn
