@@ -136,20 +136,6 @@ XnuLauncherEntry (
 
   Say (L"XnuLauncher: entry\r\n");
 
-  //
-  // Bring-up bisect: fault on purpose.
-  //
-  // ConOut output during DXE is being overwritten before anyone can read it, and
-  // a 30 s stall at entry produced nothing visible either. So make the proof
-  // impossible to miss: dereference an unmapped address. If the firmware shows a
-  // Synchronous Exception, this driver ran. If it boots to the logo and exits as
-  // before, the driver is not being dispatched at all.
-  //
-  {
-    volatile UINT32  *Nowhere = (volatile UINT32 *)(UINTN)0x00000000DEADB000ULL;
-    *Nowhere = 0x584E554C;   /* 'XNUL' */
-  }
-
   Status = ReadXnuLoader (&Image, &ImageSize);
   if (EFI_ERROR (Status)) {
     return EFI_SUCCESS;   /* no loader embedded: stay out of the boot path */
