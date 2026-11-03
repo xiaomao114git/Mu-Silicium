@@ -2,13 +2,12 @@
 """Attach an XNUP payload to a Mu-Silicium boot image.
 
 BootShim looks for an "XNUP" container right after the UEFI FD (still inside the
-gzip-compressed kernel) and copies it to PAYLOAD_BASE, where XnuLoader reads it.
-Without it the handoff has nothing to start.
+gzip-compressed kernel) and copies it to PAYLOAD_BASE, where the loader reads it.
 
-The kernel is gzip(FD) followed by a complete DTB, so the gzip stream has to be
-located by bisection: gunzip the largest prefix that decompresses.
+The kernel is gzip(FD) followed by a complete DTB, so the gzip stream is located
+through zlib's unused_data: that is exactly where the member ends.
 
-Usage: attach_payload.py <Mu-ktm.img> <loader.efi> <out.img>
+Usage: attach_payload.py <Mu-ktm.img> <out.img> name=file [name=file ...] [--cmdline "..."]
 """
 import gzip
 import struct
@@ -20,20 +19,13 @@ XNUP_MAGIC = 0x50554E58  # "XNUP"
 
 
 def gunzip_prefix(buf):
-    """Return (payload_bytes, consumed) for the gzip stream at the start of buf.
-
-    zlib's decompressobj reports exactly where the gzip member ends via
-    unused_data, which is what separates the compressed FD from the DTB that
-    follows it. A bisection over gzip.decompress() guesses at this and can land on
-    a short prefix, silently dropping the firmware volume.
-    """
+    """Return (payload_bytes, consumed) for the gzip member at the start of buf."""
     d = zlib.decompressobj(16 + zlib.MAX_WBITS)  # 16 = gzip wrapper
     out = d.decompress(buf)
     out += d.flush()
     if not d.eof:
         raise ValueError("gzip stream is truncated")
-    consumed = len(buf) - len(d.unused_data)
-    return out, consumed
+    return out, len(buf) - len(d.unused_data)
 
 
 def build_xnup(entries):
@@ -41,29 +33,27 @@ def build_xnup(entries):
     body = b""
     for name, data in entries:
         name_buf = name.encode("ascii")[:15].ljust(16, b"\0")
-        head = name_buf + struct.pack("<II", len(data), 0)
-        pad = (16 - (len(data) % 16)) % 16
-        body += head + data + b"\0" * pad
+        body += name_buf + struct.pack("<II", len(data), 0)
+        body += data + b"\0" * ((16 - len(data) % 16) % 16)
+    body += b"\0" * 24          # an empty name ends the list
     return struct.pack("<II", XNUP_MAGIC, len(body)) + body
 
 
 def main():
-    if len(sys.argv) < 4:
-        sys.exit("usage: attach_payload.py <Mu-ktm.img> <out.img> name=file [name=file ...] [--cmdline \"...\"]")
     argv = sys.argv[1:]
     cmdline = None
     if "--cmdline" in argv:
-        idx = argv.index("--cmdline")
-        if idx + 1 >= len(argv):
-            sys.exit("--cmdline needs a value")
-        cmdline = argv[idx + 1]
-        del argv[idx:idx + 2]
+        i = argv.index("--cmdline")
+        cmdline = argv[i + 1]
+        del argv[i:i + 2]
+    if len(argv) < 3:
+        sys.exit(__doc__)
 
     img_path, out_path = argv[0], argv[1]
     items = []
     for spec in argv[2:]:
         if "=" not in spec:
-            sys.exit(f"payload item must be name=file, got {spec!r}")
+            sys.exit("payload item must be name=file, got %r" % spec)
         name, path = spec.split("=", 1)
         items.append((name, open(path, "rb").read()))
     if cmdline is not None:
@@ -74,37 +64,36 @@ def main():
         sys.exit("not an android boot image")
 
     kernel_size = struct.unpack_from("<I", img, 8)[0]
-    header_version = struct.unpack_from("<I", img, 40)[0]
-    print(f"boot image : {len(img)} bytes  kernel={kernel_size}  v={header_version}")
+    print("boot image : %d bytes  kernel=%d  v=%d"
+          % (len(img), kernel_size, struct.unpack_from("<I", img, 40)[0]))
 
     kernel = bytes(img[PAGE:PAGE + kernel_size])
     fd, consumed = gunzip_prefix(kernel)
     tail = kernel[consumed:]
-    print(f"kernel     : gzip {consumed} bytes + tail {len(tail)} bytes")
-    print(f"FD         : {len(fd)} bytes")
+    print("kernel     : gzip %d bytes + tail %d bytes" % (consumed, len(tail)))
+    print("FD         : %d bytes" % len(fd))
     if len(fd) < 1024 * 1024:
-        sys.exit(f"FD is only {len(fd)} bytes - the firmware volume was lost")
+        sys.exit("FD is only %d bytes - the firmware volume was lost" % len(fd))
 
     for name, data in items:
-        shown = data.rstrip(b"\0").decode("utf-8", "replace") if name == "cmdline" else f"{len(data)} bytes"
-        print(f"payload    : {name} = {shown}")
+        shown = (data.rstrip(b"\0").decode("utf-8", "replace")
+                 if name == "cmdline" else "%d bytes" % len(data))
+        print("payload    : %s = %s" % (name, shown))
 
     xnup = build_xnup(items)
-    print(f"XNUP       : {len(xnup)} bytes")
+    print("XNUP       : %d bytes" % len(xnup))
 
+    # gzip, not raw zlib: the bootloader expects the same container it accepted before
     new_kernel = gzip.compress(fd + xnup, compresslevel=9) + tail
-    print(f"new kernel : {len(new_kernel)} bytes")
+    print("new kernel : %d bytes" % len(new_kernel))
 
     pages = (len(new_kernel) + PAGE - 1) // PAGE
-    padded = new_kernel + b"\0" * (pages * PAGE - len(new_kernel))
-
     out = bytearray(img[:PAGE])
     struct.pack_into("<I", out, 8, len(new_kernel))
-    out += padded
+    out += new_kernel + b"\0" * (pages * PAGE - len(new_kernel))
     out += img[PAGE + kernel_size:]
-
     open(out_path, "wb").write(out)
-    print(f"written    : {out_path}  {len(out)} bytes")
+    print("written    : %s  %d bytes" % (out_path, len(out)))
 
 
 if __name__ == "__main__":
