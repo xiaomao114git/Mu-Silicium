@@ -649,6 +649,15 @@ fb_command(char *cmd)
 				log_buf[log_len] = 0;
 				fb_reply("OKAY", log_buf + mark);
 				log_len = mark;
+			} else if (str_eq(var, "full-log")) {
+				/*
+				 * Everything in the buffer, not the increment: "screen" hands back only what
+				 * was written since the previous call and then drops it, so a kernel's own log
+				 * - written before that mark - could never be read out. This one answers with
+				 * the whole record and leaves the buffer alone.
+				 */
+				log_buf[log_len] = 0;
+				fb_reply("OKAY", log_buf);
 			} else {
 				fb_reply("OKAY", "");
 			}
