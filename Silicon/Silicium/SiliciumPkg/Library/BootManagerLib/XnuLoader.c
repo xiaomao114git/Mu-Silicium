@@ -311,12 +311,36 @@ StartPayloadLoader ()
 VOID
 XnuLoaderDiagnostics ()
 {
-  EFI_STATUS              Status;
-  EFI_HANDLE             *Handles;
-  UINTN                   Count;
-  UINTN                   BlockIoCount;
-  CHAR16                  Line[128];
-  EFI_BLOCK_IO_PROTOCOL  *Target;
+  EFI_STATUS                    Status;
+  EFI_HANDLE                   *Handles;
+  UINTN                         Count;
+  UINTN                         BlockIoCount;
+  CHAR16                        Line[128];
+  EFI_BLOCK_IO_PROTOCOL        *Target;
+  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL Red;
+
+  //
+  // Paint a red band across the top of the screen first. This goes straight to
+  // GOP and needs no console protocol at all, so it answers "did this function
+  // run?" even if ConOut is unusable at this point.
+  //
+  Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop);
+  if (!EFI_ERROR (Status) && (Gop->Mode != NULL) && (Gop->Mode->Info != NULL)) {
+    Red.Blue  = 0x00;
+    Red.Green = 0x00;
+    Red.Red   = 0xFF;
+    Red.Reserved = 0;
+    gBS->StretchBlt (
+           &Gop->Blt[0],
+           &Red,
+           EfiBltVideoFill,
+           0, 0, 0, 0,
+           Gop->Mode->Info->HorizontalResolution,
+           80,
+           0
+           );
+  }
 
   gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: diagnostics\r\n");
 
