@@ -34,7 +34,7 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
 #define RESIDENT_RD_RESERVE 0x30000000ULL         /* RAM that must remain for the kernel itself */
 #define PAGE_SIZE_MAX       0x4000ULL
 
-#define LOG_PARTITION       u"logdump"
+#define LOG_PARTITION       u"logfs"   /* this phone calls it logfs, not logdump */
 #define CHECKPOINT_SELFTEST 999
 #define PANIC_LOG_SIZE      0x80000u
 #define NVRAM_BANK_SIZE     0x2000u
