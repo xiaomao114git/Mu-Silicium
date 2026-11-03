@@ -48,9 +48,15 @@ def build_xnup(entries):
 
 
 def main():
-    if len(sys.argv) != 4:
-        sys.exit("usage: attach_payload.py <Mu-ktm.img> <loader.efi> <out.img>")
-    img_path, loader_path, out_path = sys.argv[1:]
+    if len(sys.argv) < 4:
+        sys.exit("usage: attach_payload.py <Mu-ktm.img> <out.img> name=file [name=file ...]")
+    img_path, out_path = sys.argv[1:3]
+    items = []
+    for spec in sys.argv[3:]:
+        if "=" not in spec:
+            sys.exit(f"payload item must be name=file, got {spec!r}")
+        name, path = spec.split("=", 1)
+        items.append((name, open(path, "rb").read()))
 
     img = bytearray(open(img_path, "rb").read())
     if img[:8] != b"ANDROID!":
@@ -65,10 +71,13 @@ def main():
     tail = kernel[consumed:]
     print(f"kernel     : gzip {consumed} bytes + tail {len(tail)} bytes")
     print(f"FD         : {len(fd)} bytes")
+    if len(fd) < 1024 * 1024:
+        sys.exit(f"FD is only {len(fd)} bytes - the firmware volume was lost")
 
-    loader = open(loader_path, "rb").read()
-    xnup = build_xnup([("loader.efi", loader)])
-    print(f"XNUP       : {len(xnup)} bytes (loader {len(loader)})")
+    xnup = build_xnup(items)
+    for name, data in items:
+        print(f"payload    : {name} = {len(data)} bytes")
+    print(f"XNUP       : {len(xnup)} bytes")
 
     new_kernel = gzip.compress(fd + xnup, compresslevel=9) + tail
     print(f"new kernel : {len(new_kernel)} bytes")
