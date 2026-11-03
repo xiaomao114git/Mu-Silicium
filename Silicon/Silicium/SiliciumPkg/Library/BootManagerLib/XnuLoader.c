@@ -243,13 +243,51 @@ FlushLog ()
 // the real XNU loader: start it straight from memory, so the loader can be
 // iterated on without rebuilding this firmware.
 //
+/**
+  Paint a full-width band. GOP only: this runs from AfterConsole, where the
+  console belongs to us, so it is a reliable channel.
+**/
+STATIC
+VOID
+Paint (
+  IN EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,
+  IN UINTN                         Row,
+  IN UINT8                         R,
+  IN UINT8                         G,
+  IN UINT8                         B
+  )
+{
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL Colour;
+
+  Colour.Red      = R;
+  Colour.Green    = G;
+  Colour.Blue     = B;
+  Colour.Reserved = 0;
+
+  Gop->Blt (Gop, &Colour, EfiBltVideoFill, 0, 0, 0, Row * 60,
+            Gop->Mode->Info->HorizontalResolution, 60, 0);
+}
+
 STATIC
 BOOLEAN
 StartPayloadLoader ()
 {
-  XNU_PAYLOAD_HEADER *Header = (XNU_PAYLOAD_HEADER *)XNU_PAYLOAD_BASE;
-  UINT8              *Cursor;
-  UINT8              *End;
+  XNU_PAYLOAD_HEADER           *Header = (XNU_PAYLOAD_HEADER *)XNU_PAYLOAD_BASE;
+  UINT8                        *Cursor;
+  UINT8                        *End;
+  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
+
+  if (!EFI_ERROR (gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop)) &&
+      (Gop != NULL) && (Gop->Mode != NULL) && (Gop->Mode->Info != NULL))
+  {
+    // band 0: reached the handoff at all
+    Paint (Gop, 0, 0x00, 0x00, 0xFF);
+
+    if (Header->Magic == XNU_PAYLOAD_MAGIC) {
+      // band 1: BootShim delivered the container
+      Paint (Gop, 1, 0x00, 0xFF, 0x00);
+    }
+  }
 
   if (Header->Magic != XNU_PAYLOAD_MAGIC || Header->Size > XNU_PAYLOAD_MAX_SIZE) {
     return FALSE;
@@ -266,14 +304,32 @@ StartPayloadLoader ()
     }
 
     if (AsciiStrnCmp (Entry->Name, "loader.efi", sizeof (Entry->Name)) == 0) {
-      EFI_HANDLE Handle;
+      EFI_HANDLE  Handle;
+      EFI_STATUS  Status;
 
-      if (!EFI_ERROR (gBS->LoadImage (FALSE, gImageHandle, NULL, Entry + 1, Entry->Size, &Handle))) {
-        gBS->StartImage (Handle, NULL, NULL);
-        return TRUE;
+      if (Gop != NULL) {
+        Paint (Gop, 2, 0xFF, 0xFF, 0x00);   // band 2: entry found
       }
 
-      return FALSE;
+      Handle = NULL;
+      Status = gBS->LoadImage (FALSE, gImageHandle, NULL, Entry + 1, Entry->Size, &Handle);
+      if (EFI_ERROR (Status)) {
+        if (Gop != NULL) {
+          Paint (Gop, 3, 0xFF, 0x00, 0x00);  // band 3 red: LoadImage failed
+        }
+        return FALSE;
+      }
+
+      if (Gop != NULL) {
+        Paint (Gop, 4, 0x80, 0x00, 0xFF);    // band 4 violet: image loaded
+      }
+
+      gBS->StartImage (Handle, NULL, NULL);
+
+      if (Gop != NULL) {
+        Paint (Gop, 5, 0xFF, 0x80, 0x00);    // band 5 orange: StartImage returned
+      }
+      return TRUE;
     }
 
     Cursor += sizeof (XNU_PAYLOAD_ENTRY) + ALIGN_VALUE (Entry->Size, 16);
