@@ -865,10 +865,6 @@ dt_begin(struct dt_writer *w, const char *name)
 	if (w->depth > 0) {
 		w->counts[w->depth - 1][1]++;
 	}
-	/* The shape of the tree, one line per node: when the kernel reports that it
-	 * cannot find a node it should be able to see, the fastest answer is the list
-	 * of nodes that were actually written, in order and at their depth. */
-	print("dt%.2d %s\n", (uint64_t)w->depth, name);
 	w->counts[w->depth++] = (uint32_t *)w->cur;
 	memset(w->cur, 0, 8);
 	w->cur += 8;
@@ -879,5 +875,63 @@ static void
 dt_end(struct dt_writer *w)
 {
 	w->depth--;
+}
+
+/*
+ * The tree as it was written, for a boot that cannot find in it what it looks for. The nodes down
+ * to two levels, each with its device_type and the first words of its reg, then the totals: whether
+ * an "interrupt-controller" is anywhere in the tree, and whether walking it lands exactly on the
+ * length the writer counted.
+ */
+static int dt_nodes_seen, dt_ic_seen;
+
+static const uint8_t *
+dt_dump_node(const uint8_t *p, int depth)
+{
+	uint32_t nprops = *(const uint32_t *)p;
+	uint32_t nchild = *(const uint32_t *)(p + 4);
+	const uint8_t *q = p + 8;
+	const char *name = "(no name)";
+	const char *dtype = NULL;
+	const uint32_t *reg = NULL;
+	uint32_t nreg = 0;
+
+	for (uint32_t i = 0; i < nprops; i++) {
+		const char *pn = (const char *)q;
+		uint32_t plen = *(const uint32_t *)(q + 32);
+
+		if (pn[0] == 'n' && pn[1] == 'a' && pn[2] == 'm' && pn[3] == 'e' && pn[4] == 0) {
+			name = (const char *)(q + 36);
+		} else if (pn[0] == 'r' && pn[1] == 'e' && pn[2] == 'g' && pn[3] == 0) {
+			reg = (const uint32_t *)(q + 36);
+			nreg = plen / 4;
+		} else if (pn[0] == 'd' && pn[1] == 'e' && pn[2] == 'v' && pn[3] == 'i' && pn[4] == 'c' &&
+		    pn[5] == 'e' && pn[6] == '_' && pn[7] == 't' && pn[8] == 'y' && pn[9] == 'p' && pn[10] == 'e' &&
+		    pn[11] == 0) {
+			dtype = (const char *)(q + 36);
+		}
+		q += 36 + ((plen + 3) & ~3u);
+	}
+	dt_nodes_seen++;
+	if (dtype != NULL && str_eq(dtype, "interrupt-controller")) {
+		dt_ic_seen++;
+	}
+	if (depth <= 2) {
+		for (int d = 0; d < depth; d++) {
+			print("%s", "  ");
+		}
+		print("%s", name);
+		if (dtype != NULL) {
+			print(" dt=%s", dtype);
+		}
+		for (uint32_t i = 0; i < nreg && i < 4; i++) {
+			print(" reg%d=%x", (uint64_t)i, (uint64_t)reg[i]);
+		}
+		print("\n");
+	}
+	for (uint32_t i = 0; i < nchild; i++) {
+		q = dt_dump_node(q, depth + 1);
+	}
+	return q;
 }
 

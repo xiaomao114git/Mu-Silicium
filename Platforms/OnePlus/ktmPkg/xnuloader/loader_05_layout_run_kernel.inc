@@ -927,6 +927,14 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
 	ba->deviceTreeP = dt_pa - slide;
 	ba->deviceTreeLength = dt_len;
 	print("device tree %x len %x, boot_args %x, top %x\n", dt_pa, (uint64_t)dt_len, ba_pa, top);
+	dt_nodes_seen = 0;
+	dt_ic_seen = 0;
+	{
+		const uint8_t *walked = dt_dump_node((const uint8_t *)dt_pa, 0);
+
+		print("dt walk: %d nodes, %d interrupt-controller, end %x want %x\n", (uint64_t)dt_nodes_seen,
+		    (uint64_t)dt_ic_seen, (uint64_t)(uintptr_t)walked, (uint64_t)(dt_pa + dt_len));
+	}
 	print("cmdline: %s\n", ba->commandLine);
 	if (kernel_mpidr != this_mpidr) {
 		print("the kernel will run on core %x (this is core %x)\n", kernel_mpidr, this_mpidr);
