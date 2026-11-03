@@ -22,6 +22,7 @@
 #include <Configuration/BootDevices.h>
 
 #include "BootManager.h"
+#include "XnuLoader.h"
 
 //
 // Global Variables
@@ -203,6 +204,15 @@ EFIAPI
 PlatformBootManagerUnableToBoot ()
 {
   EFI_STATUS Status;
+
+  //
+  // Nothing to boot: hand over to the XNU loader. It either starts the loader
+  // carried in the payload behind the firmware image (and does not return), or
+  // writes its diagnostics to the log partition and cold-resets. Without this
+  // the default path just powers the phone off, which is what the logo-then-
+  // reboot behaviour was.
+  //
+  XnuLoaderMain ();
 
   // Execute Secondary Unable To Boot
   DeviceBootManagerUnableToBoot ();
