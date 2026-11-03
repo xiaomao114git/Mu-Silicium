@@ -409,12 +409,42 @@ XnuLoaderDiagnostics ()
   // Band 4: the probe write succeeded.
   mLog = AllocateZeroPool (SIZE_4KB);
   if (mLog != NULL) {
+    VOID  *Verify;
+
     Log ("== XNULOADER DIAG ==\n");
     Log ("written by the firmware into the log partition\n");
+
+    //
+    // WriteBlocks only stages into the block cache - without FlushBlocks the text
+    // never reaches the medium, which is why the partition read back empty from
+    // Android even though the write returned success.
+    //
     Status = Target->WriteBlocks (Target, Target->Media->MediaId, 0, ALIGN_VALUE (mLogLen, Target->Media->BlockSize), mLog);
     if (!EFI_ERROR (Status)) {
-      Band (Gop, 4, 0xFF, 0xFF, 0xFF);
+      Status = Target->FlushBlocks (Target);
     }
+
+    if (!EFI_ERROR (Status)) {
+      //
+      // Read it straight back. If the medium kept it, this buffer holds the text.
+      //
+      Verify = AllocateZeroPool (ALIGN_VALUE (mLogLen, Target->Media->BlockSize));
+      if (Verify != NULL) {
+        if (!EFI_ERROR (Target->ReadBlocks (Target, Target->Media->MediaId, 0, ALIGN_VALUE (mLogLen, Target->Media->BlockSize), Verify)) &&
+            (CompareMem (Verify, mLog, mLogLen) == 0))
+        {
+          //
+          // Five short bands confirm: executed, block device, partitions, log
+          // partition resolved, and now the data verified on the medium.
+          //
+          for (UINTN b = 0; b < 5; b++) {
+            Band (Gop, 4 + b, 0xFF, 0xFF, 0xFF);
+          }
+        }
+        FreePool (Verify);
+      }
+    }
+
     FreePool (mLog);
     mLog    = NULL;
     mLogLen = 0;
