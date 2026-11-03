@@ -112,6 +112,15 @@ PlatformBootManagerAfterConsole ()
     DEBUG ((EFI_D_ERROR, "%a: Failed to Display Boot Logo! Status = %r\n", __FUNCTION__, Status));
   }
 
+  //
+  // Hand over to the XNU loader here, while the logo is up and the console, GOP and
+  // storage stack are all still ours. If it starts, it never returns; if it does not,
+  // the normal boot flow continues to UnableToBoot and reports through the log.
+  //
+  if (XnuLoaderTryStart ()) {
+    ASSERT (FALSE);   // the loader does not return
+  }
+
   // Register Key Callback
   Status = RegisterKeyCallback ((EFI_DEVICE_PATH_PROTOCOL *)&KeypadDevicePath);
   if (!EFI_ERROR (Status) && GopProtocol != NULL) {

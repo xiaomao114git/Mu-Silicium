@@ -33,4 +33,15 @@ typedef struct {
 VOID
 XnuLoaderMain ();
 
+//
+// Try to start the loader carried in the payload, without resetting on failure.
+//
+// Called early (PlatformBootManagerAfterConsole) while the console, GOP and the
+// storage stack are all still live, so a failure leaves the normal boot flow free
+// to continue instead of taking the phone down. Returns TRUE if a loader image was
+// found and started; it may of course never return.
+//
+BOOLEAN
+XnuLoaderTryStart ();
+
 #endif /* _XNU_LOADER_H_ */

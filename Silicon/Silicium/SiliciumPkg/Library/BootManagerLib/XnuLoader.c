@@ -244,7 +244,7 @@ FlushLog ()
 // iterated on without rebuilding this firmware.
 //
 STATIC
-VOID
+BOOLEAN
 StartPayloadLoader ()
 {
   XNU_PAYLOAD_HEADER *Header = (XNU_PAYLOAD_HEADER *)XNU_PAYLOAD_BASE;
@@ -252,7 +252,7 @@ StartPayloadLoader ()
   UINT8              *End;
 
   if (Header->Magic != XNU_PAYLOAD_MAGIC || Header->Size > XNU_PAYLOAD_MAX_SIZE) {
-    return;
+    return FALSE;
   }
 
   Cursor = (UINT8 *)(Header + 1);
@@ -270,13 +270,64 @@ StartPayloadLoader ()
 
       if (!EFI_ERROR (gBS->LoadImage (FALSE, gImageHandle, NULL, Entry + 1, Entry->Size, &Handle))) {
         gBS->StartImage (Handle, NULL, NULL);
+        return TRUE;
       }
 
-      return;
+      return FALSE;
     }
 
     Cursor += sizeof (XNU_PAYLOAD_ENTRY) + ALIGN_VALUE (Entry->Size, 16);
   }
+
+  return FALSE;
+}
+
+/**
+  Start the payload's loader from a point where everything still works.
+
+  Runs right after the boot logo, so the console, GOP and the storage drivers are
+  all live. Starts the loader and reports whether it did; a FALSE return lets the
+  normal boot flow carry on rather than resetting the phone.
+
+  Also writes what it found to the log partition, which is readable from Android.
+**/
+BOOLEAN
+XnuLoaderTryStart ()
+{
+  EFI_TIME            Time;
+  BOOLEAN             Started;
+
+  mLog = AllocateZeroPool (LOG_SIZE);
+  if (mLog != NULL) {
+    XNU_PAYLOAD_HEADER *Header = (XNU_PAYLOAD_HEADER *)XNU_PAYLOAD_BASE;
+
+    Log ("== XNULOADER early ==\n");
+    if (!EFI_ERROR (gRT->GetTime (&Time, NULL))) {
+      Log ("time=%04d-%02d-%02d %02d:%02d:%02d\n", Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second);
+    }
+    Log ("payload base=%lx magic=%08x size=%x\n",
+         (UINT64)XNU_PAYLOAD_BASE, Header->Magic, Header->Size);
+    FlushLog ();
+  }
+
+  Started = StartPayloadLoader ();
+
+  if (mLog != NULL && !Started) {
+    Log ("loader: not started\n");
+    LogCpu ();
+    LogDisplay ();
+    LogPayload ();
+    Log ("== END ==\n");
+    FlushLog ();
+  }
+
+  if (mLog != NULL) {
+    FreePool (mLog);
+    mLog    = NULL;
+    mLogLen = 0;
+  }
+
+  return Started;
 }
 
 
