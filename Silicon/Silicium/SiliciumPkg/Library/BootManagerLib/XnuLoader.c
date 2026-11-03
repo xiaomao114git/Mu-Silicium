@@ -58,18 +58,38 @@ FindPartition (
   EFI_STATUS  Status;
   EFI_HANDLE *Handles;
   UINTN       Count;
+  CHAR16      Line[80];
 
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiPartitionInfoProtocolGuid, NULL, &Count, &Handles);
   if (EFI_ERROR (Status)) {
+    //
+    // No partition protocol at all: PartitionDxe or the storage driver behind it
+    // never produced a block device, so nothing can be logged to disk.
+    //
+    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: no partitions (%r)\r\n", Status);
+    gST->ConOut->OutputString (gST->ConOut, Line);
     return NULL;
   }
+
+  UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %d partition handle(s)\r\n", (UINT32)Count);
+  gST->ConOut->OutputString (gST->ConOut, Line);
 
   for (UINTN i = 0; i < Count; i++) {
     EFI_PARTITION_INFO_PROTOCOL *Info;
     EFI_BLOCK_IO_PROTOCOL       *BlockIo;
 
     Status = gBS->HandleProtocol (Handles[i], &gEfiPartitionInfoProtocolGuid, (VOID **)&Info);
-    if (EFI_ERROR (Status) || Info->Type != PARTITION_TYPE_GPT) {
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    //
+    // Print every name seen, so a mismatch is visible rather than silent.
+    //
+    UnicodeSPrint (Line, sizeof (Line), L"  [%d] type=%d name=%s\r\n", (UINT32)i, (UINT32)Info->Type, Info->Info.Gpt.PartitionName);
+    gST->ConOut->OutputString (gST->ConOut, Line);
+
+    if (Info->Type != PARTITION_TYPE_GPT) {
       continue;
     }
 
@@ -79,10 +99,12 @@ FindPartition (
 
     Status = gBS->HandleProtocol (Handles[i], &gEfiBlockIoProtocolGuid, (VOID **)&BlockIo);
     if (!EFI_ERROR (Status)) {
+      gBS->FreePool (Handles);
       return BlockIo;
     }
   }
 
+  gBS->FreePool (Handles);
   return NULL;
 }
 
