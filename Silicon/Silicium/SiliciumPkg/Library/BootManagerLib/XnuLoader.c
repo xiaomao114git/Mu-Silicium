@@ -58,21 +58,11 @@ FindPartition (
   EFI_STATUS  Status;
   EFI_HANDLE *Handles;
   UINTN       Count;
-  CHAR16      Line[80];
 
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiPartitionInfoProtocolGuid, NULL, &Count, &Handles);
   if (EFI_ERROR (Status)) {
-    //
-    // No partition protocol at all: PartitionDxe or the storage driver behind it
-    // never produced a block device, so nothing can be logged to disk.
-    //
-    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: no partitions (%r)\r\n", Status);
-    gST->ConOut->OutputString (gST->ConOut, Line);
     return NULL;
   }
-
-  UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %d partition handle(s)\r\n", (UINT32)Count);
-  gST->ConOut->OutputString (gST->ConOut, Line);
 
   for (UINTN i = 0; i < Count; i++) {
     EFI_PARTITION_INFO_PROTOCOL *Info;
@@ -82,12 +72,6 @@ FindPartition (
     if (EFI_ERROR (Status)) {
       continue;
     }
-
-    //
-    // Print every name seen, so a mismatch is visible rather than silent.
-    //
-    UnicodeSPrint (Line, sizeof (Line), L"  [%d] type=%d name=%s\r\n", (UINT32)i, (UINT32)Info->Type, Info->Info.Gpt.PartitionName);
-    gST->ConOut->OutputString (gST->ConOut, Line);
 
     if (Info->Type != PARTITION_TYPE_GPT) {
       continue;
@@ -236,14 +220,12 @@ FlushLog ()
   UINTN                  BlockSize;
   UINTN                  WriteSize;
 
+  //
+  // Silent on failure on purpose: the console is not ours at this point, and a
+  // write attempt to a console that BDS has finished with is worse than no report.
+  //
   BlockIo = FindPartition (XNU_LOG_PARTITION);
   if (BlockIo == NULL) {
-    //
-    // No log partition under that name. Say so on the console: after BDS has
-    // cleared the screen this is the only channel left, and a silent failure
-    // here is indistinguishable from the loader never running.
-    //
-    gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: log partition not found\r\n");
     return;
   }
 
@@ -253,9 +235,6 @@ FlushLog ()
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, 0, WriteSize, mLog);
   if (!EFI_ERROR (Status)) {
     BlockIo->FlushBlocks (BlockIo);
-    gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: log written\r\n");
-  } else {
-    gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: log write failed\r\n");
   }
 }
 
@@ -300,210 +279,6 @@ StartPayloadLoader ()
   }
 }
 
-/**
-  Diagnostics called from PlatformBootManagerAfterConsole.
-
-  At that point the logo has been drawn, every DXE driver has been dispatched and
-  the console still works, so both the screen and the block devices are usable.
-  Enumerates what storage the firmware can actually see and reports whether the
-  log partition was found and written - without starting anything.
-**/
-/**
-  Draw one horizontal band. GOP only - no console protocol involved.
-
-  After DisplayBootGraphic the console produces nothing visible, so pixel bands are
-  the only reliable channel back to a human looking at the phone.
-**/
-STATIC
-VOID
-Band (
-  IN EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,
-  IN UINTN                         Row,
-  IN UINT8                         R,
-  IN UINT8                         G,
-  IN UINT8                         B
-  )
-{
-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL Colour;
-
-  Colour.Red      = R;
-  Colour.Green    = G;
-  Colour.Blue     = B;
-  Colour.Reserved = 0;
-
-  Gop->Blt (
-         Gop,
-         &Colour,
-         EfiBltVideoFill,
-         0,
-         0,
-         0,
-         Row * 60,
-         Gop->Mode->Info->HorizontalResolution,
-         60,
-         0
-         );
-}
-
-/**
-  Diagnostics called from PlatformBootManagerAfterConsole.
-
-  At that point the logo has been drawn, every DXE driver has been dispatched and
-  the console still works, so both the screen and the block devices are usable.
-  Enumerates what storage the firmware can actually see and reports whether the
-  log partition was found and written - without starting anything.
-
-  Everything is reported as colour bands, one per check, top to bottom:
-
-    red     this function ran
-    green   at least one raw block device exists
-    blue    at least one partition was reported
-    yellow  the log partition resolved by name
-    white   the probe write succeeded
-
-  A missing band is as informative as a present one.
-**/
-VOID
-XnuLoaderDiagnostics ()
-{
-  EFI_STATUS              Status;
-  EFI_HANDLE             *Handles;
-  UINTN                   Count;
-  UINTN                   BlockIoCount;
-  CHAR16                  Line[128];
-  EFI_BLOCK_IO_PROTOCOL  *Target;
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
-
-  if (EFI_ERROR (gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop)) ||
-      (Gop == NULL) || (Gop->Mode == NULL) || (Gop->Mode->Info == NULL))
-  {
-    return;
-  }
-
-  // Band 0: proof of execution.
-  Band (Gop, 0, 0xFF, 0x00, 0x00);
-
-  // Band 1: raw block devices present.
-  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &BlockIoCount, &Handles);
-  if (EFI_ERROR (Status) || (BlockIoCount == 0)) {
-    return;   // no storage: stop here, bands below will be absent
-  }
-  gBS->FreePool (Handles);
-  Band (Gop, 1, 0x00, 0xFF, 0x00);
-
-  // Band 2: partitions enumerated.
-  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiPartitionInfoProtocolGuid, NULL, &Count, &Handles);
-  if (EFI_ERROR (Status) || (Count == 0)) {
-    return;
-  }
-  gBS->FreePool (Handles);
-  Band (Gop, 2, 0x00, 0x00, 0xFF);
-
-  // Band 3: the log partition resolved by name.
-  Target = FindPartition (XNU_LOG_PARTITION);
-  if (Target == NULL) {
-    return;
-  }
-  Band (Gop, 3, 0xFF, 0xFF, 0x00);
-
-  // Band 4: the probe write succeeded.
-  mLog = AllocateZeroPool (SIZE_4KB);
-  if (mLog != NULL) {
-    VOID  *Verify;
-
-    Log ("== XNULOADER DIAG ==\n");
-    Log ("written by the firmware into the log partition\n");
-
-    //
-    // WriteBlocks only stages into the block cache - without FlushBlocks the text
-    // never reaches the medium, which is why the partition read back empty from
-    // Android even though the write returned success.
-    //
-    Status = Target->WriteBlocks (Target, Target->Media->MediaId, 0, ALIGN_VALUE (mLogLen, Target->Media->BlockSize), mLog);
-    if (!EFI_ERROR (Status)) {
-      Status = Target->FlushBlocks (Target);
-    }
-
-    if (!EFI_ERROR (Status)) {
-      //
-      // Read it straight back. If the medium kept it, this buffer holds the text.
-      //
-      Verify = AllocateZeroPool (ALIGN_VALUE (mLogLen, Target->Media->BlockSize));
-      if (Verify != NULL) {
-        if (!EFI_ERROR (Target->ReadBlocks (Target, Target->Media->MediaId, 0, ALIGN_VALUE (mLogLen, Target->Media->BlockSize), Verify)) &&
-            (CompareMem (Verify, mLog, mLogLen) == 0))
-        {
-          //
-          // Five short bands confirm: executed, block device, partitions, log
-          // partition resolved, and now the data verified on the medium.
-          //
-          for (UINTN b = 0; b < 5; b++) {
-            Band (Gop, 4 + b, 0xFF, 0xFF, 0xFF);
-          }
-        }
-        FreePool (Verify);
-      }
-    }
-
-    FreePool (mLog);
-    mLog    = NULL;
-    mLogLen = 0;
-  }
-
-  // Keep the console write too: harmless if it works, ignored if it does not.
-  gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: diagnostics done\r\n");
-  (VOID)Line;
-
-  //
-  // Band 13: an "XNUP" container is sitting at the payload base, i.e. BootShim
-  // copied what was appended behind the UEFI image. This is the check that says
-  // whether the handoff can ever start a loader.
-  //
-  {
-    XNU_PAYLOAD_HEADER *Header = (XNU_PAYLOAD_HEADER *)XNU_PAYLOAD_BASE;
-
-    if ((Header->Magic == XNU_PAYLOAD_MAGIC) && (Header->Size != 0) && (Header->Size <= XNU_PAYLOAD_MAX_SIZE)) {
-      Band (Gop, 13, 0x00, 0xFF, 0xFF);   // cyan: payload present and plausible
-
-      //
-      // Walk the entries for "loader.efi" and try to start it right here, while
-      // GOP and the console are both still alive. Doing this at UnableToBoot
-      // gained nothing visible because the display is gone by then.
-      //
-      UINT8 *Cursor = (UINT8 *)(Header + 1);
-      UINT8 *End    = Cursor + Header->Size;
-
-      while (Cursor + sizeof (XNU_PAYLOAD_ENTRY) <= End) {
-        XNU_PAYLOAD_ENTRY *Entry = (XNU_PAYLOAD_ENTRY *)Cursor;
-
-        if (Entry->Name[0] == 0) {
-          break;
-        }
-
-        if (AsciiStrnCmp (Entry->Name, "loader.efi", sizeof (Entry->Name)) == 0) {
-          EFI_HANDLE Handle = NULL;
-
-          Band (Gop, 14, 0xFF, 0x00, 0xFF);   // magenta: the entry was found
-
-          Status = gBS->LoadImage (FALSE, gImageHandle, NULL, Entry + 1, Entry->Size, &Handle);
-          if (!EFI_ERROR (Status)) {
-            Band (Gop, 15, 0x80, 0x00, 0xFF); // violet: LoadImage succeeded
-
-            //
-            // If this returns, the loader did not take over. Orange marks that.
-            //
-            Status = gBS->StartImage (Handle, NULL, NULL);
-            Band (Gop, 16, 0xFF, 0x80, 0x00);
-          }
-
-          break;
-        }
-
-        Cursor += sizeof (XNU_PAYLOAD_ENTRY) + ALIGN_VALUE (Entry->Size, 16);
-      }
-    }
-  }
-}
 
 VOID
 XnuLoaderMain ()
@@ -511,17 +286,13 @@ XnuLoaderMain ()
   EFI_TIME Time;
 
   //
-  // Announce on the console first. BDS has already cleared the screen by the
-  // time this runs, so these lines stay visible - unlike anything printed during
-  // DXE - and they distinguish "loader never ran" from "loader ran but could not
-  // log" without needing the log partition at all.
+  // Start the loader carried in the payload (normally does not return).
   //
-  gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: entered\r\n");
-
-  // Normally does not return
+  // Nothing here touches ConOut: by the time UnableToBoot runs BDS has finished with
+  // the console, and talking to it was hiding the handoff rather than reporting it.
+  // The record goes to the log partition instead, which is what upstream does.
+  //
   StartPayloadLoader ();
-
-  gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: no payload loader, writing log\r\n");
 
   mLog = AllocateZeroPool (LOG_SIZE);
   if (mLog != NULL) {
@@ -546,7 +317,5 @@ XnuLoaderMain ()
   }
 
   // The phone is unattended: always come back to Android.
-  gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: cold reset\r\n");
-  gBS->Stall (2000000);
   gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
 }
