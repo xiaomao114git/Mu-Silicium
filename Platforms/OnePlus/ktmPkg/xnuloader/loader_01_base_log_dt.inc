@@ -865,6 +865,10 @@ dt_begin(struct dt_writer *w, const char *name)
 	if (w->depth > 0) {
 		w->counts[w->depth - 1][1]++;
 	}
+	/* The shape of the tree, one line per node: when the kernel reports that it
+	 * cannot find a node it should be able to see, the fastest answer is the list
+	 * of nodes that were actually written, in order and at their depth. */
+	print("dt%.2d %s\n", (uint64_t)w->depth, name);
 	w->counts[w->depth++] = (uint32_t *)w->cur;
 	memset(w->cur, 0, 8);
 	w->cur += 8;
