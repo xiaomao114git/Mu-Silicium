@@ -397,6 +397,7 @@ static int firmware_fault;              /* UEFI exception handler ran (set in ex
 
 static int kernel_resources_held;   /* a started kernel may still own memory and devices: gate on this */
 static int active_watch;            /* inside run_on_other_cpu's watch loop: the one exception to the gates */
+static int force_log_write;         /* the kernel has returned: write the log even though its resources are held */
 
 static int64_t psci_call(uint64_t function, uint64_t a1, uint64_t a2, uint64_t a3);
 static void set_result(const char *what, uint64_t a, uint64_t b);
@@ -491,11 +492,21 @@ write_logs(const char *klog, uint64_t klog_len)
 	efi_block_io *bio;
 
 	compose_logs(klog, klog_len);
+	/* A non-NULL klog means the kernel has already returned: whatever it did with the storage
+	 * is over, and this is the only chance to keep its record. */
+	if (klog != NULL && klog_len != 0) {
+		force_log_write = 1;
+	}
 	/* while memory and devices are held, or after a firmware fault, not even the firmware's
 	 * partition query runs (find_log_partition walks BootServices); the staged text is what
 	 * "upload" fetches. The active watch loop is the only exception, and the exception
-	 * handler revokes it at its entry (LC-EXC). */
-	bio = ((kernel_resources_held || firmware_fault) && !active_watch) ? NULL : find_log_partition();
+	 * handler revokes it at its entry (LC-EXC).
+	 *
+	 * force_log_write is the second: the kernel has already returned, so nothing is going to
+	 * touch the storage again, and this is the last chance to leave a record. Without it a
+	 * kernel that panics before shutting its cores down takes its log with it - the phone
+	 * resets and only the console ever saw the text. */
+	bio = ((kernel_resources_held || firmware_fault) && !active_watch && !force_log_write) ? NULL : find_log_partition();
 	if (bio == NULL) {
 		/*
 		 * No log partition, or a kernel that was started and not proven done may still own the
