@@ -49,14 +49,25 @@ def build_xnup(entries):
 
 def main():
     if len(sys.argv) < 4:
-        sys.exit("usage: attach_payload.py <Mu-ktm.img> <out.img> name=file [name=file ...]")
-    img_path, out_path = sys.argv[1:3]
+        sys.exit("usage: attach_payload.py <Mu-ktm.img> <out.img> name=file [name=file ...] [--cmdline \"...\"]")
+    argv = sys.argv[1:]
+    cmdline = None
+    if "--cmdline" in argv:
+        idx = argv.index("--cmdline")
+        if idx + 1 >= len(argv):
+            sys.exit("--cmdline needs a value")
+        cmdline = argv[idx + 1]
+        del argv[idx:idx + 2]
+
+    img_path, out_path = argv[0], argv[1]
     items = []
-    for spec in sys.argv[3:]:
+    for spec in argv[2:]:
         if "=" not in spec:
             sys.exit(f"payload item must be name=file, got {spec!r}")
         name, path = spec.split("=", 1)
         items.append((name, open(path, "rb").read()))
+    if cmdline is not None:
+        items.append(("cmdline", cmdline.encode() + b"\0"))
 
     img = bytearray(open(img_path, "rb").read())
     if img[:8] != b"ANDROID!":
@@ -74,9 +85,11 @@ def main():
     if len(fd) < 1024 * 1024:
         sys.exit(f"FD is only {len(fd)} bytes - the firmware volume was lost")
 
-    xnup = build_xnup(items)
     for name, data in items:
-        print(f"payload    : {name} = {len(data)} bytes")
+        shown = data.rstrip(b"\0").decode("utf-8", "replace") if name == "cmdline" else f"{len(data)} bytes"
+        print(f"payload    : {name} = {shown}")
+
+    xnup = build_xnup(items)
     print(f"XNUP       : {len(xnup)} bytes")
 
     new_kernel = gzip.compress(fd + xnup, compresslevel=9) + tail
