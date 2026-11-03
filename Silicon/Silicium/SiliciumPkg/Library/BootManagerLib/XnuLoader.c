@@ -308,116 +308,121 @@ StartPayloadLoader ()
   Enumerates what storage the firmware can actually see and reports whether the
   log partition was found and written - without starting anything.
 **/
+/**
+  Draw one horizontal band. GOP only - no console protocol involved.
+
+  After DisplayBootGraphic the console produces nothing visible, so pixel bands are
+  the only reliable channel back to a human looking at the phone.
+**/
+STATIC
+VOID
+Band (
+  IN EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,
+  IN UINTN                         Row,
+  IN UINT8                         R,
+  IN UINT8                         G,
+  IN UINT8                         B
+  )
+{
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL Colour;
+
+  Colour.Red      = R;
+  Colour.Green    = G;
+  Colour.Blue     = B;
+  Colour.Reserved = 0;
+
+  Gop->Blt (
+         Gop,
+         &Colour,
+         EfiBltVideoFill,
+         0,
+         0,
+         0,
+         Row * 60,
+         Gop->Mode->Info->HorizontalResolution,
+         60,
+         0
+         );
+}
+
+/**
+  Diagnostics called from PlatformBootManagerAfterConsole.
+
+  At that point the logo has been drawn, every DXE driver has been dispatched and
+  the console still works, so both the screen and the block devices are usable.
+  Enumerates what storage the firmware can actually see and reports whether the
+  log partition was found and written - without starting anything.
+
+  Everything is reported as colour bands, one per check, top to bottom:
+
+    red     this function ran
+    green   at least one raw block device exists
+    blue    at least one partition was reported
+    yellow  the log partition resolved by name
+    white   the probe write succeeded
+
+  A missing band is as informative as a present one.
+**/
 VOID
 XnuLoaderDiagnostics ()
 {
-  EFI_STATUS                    Status;
-  EFI_HANDLE                   *Handles;
-  UINTN                         Count;
-  UINTN                         BlockIoCount;
-  CHAR16                        Line[128];
-  EFI_BLOCK_IO_PROTOCOL        *Target;
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL Red;
+  EFI_STATUS              Status;
+  EFI_HANDLE             *Handles;
+  UINTN                   Count;
+  UINTN                   BlockIoCount;
+  CHAR16                  Line[128];
+  EFI_BLOCK_IO_PROTOCOL  *Target;
+  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
 
-  //
-  // Paint a red band across the top of the screen first. This goes straight to
-  // GOP and needs no console protocol at all, so it answers "did this function
-  // run?" even if ConOut is unusable at this point.
-  //
-  Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop);
-  if (!EFI_ERROR (Status) && (Gop->Mode != NULL) && (Gop->Mode->Info != NULL)) {
-    Red.Blue     = 0x00;
-    Red.Green    = 0x00;
-    Red.Red      = 0xFF;
-    Red.Reserved = 0;
-    Gop->Blt (
-           Gop,
-           &Red,
-           EfiBltVideoFill,
-           0,
-           0,
-           0,
-           0,
-           Gop->Mode->Info->HorizontalResolution,
-           80,
-           0
-           );
+  if (EFI_ERROR (gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop)) ||
+      (Gop == NULL) || (Gop->Mode == NULL) || (Gop->Mode->Info == NULL))
+  {
+    return;
   }
 
-  gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: diagnostics\r\n");
+  // Band 0: proof of execution.
+  Band (Gop, 0, 0xFF, 0x00, 0x00);
 
-  //
-  // How many raw block devices exist? If this is zero, no storage driver produced
-  // a device and no partition lookup can ever succeed.
-  //
+  // Band 1: raw block devices present.
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &BlockIoCount, &Handles);
-  if (EFI_ERROR (Status)) {
-    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: blockio unavailable %r\r\n", Status);
-    gST->ConOut->OutputString (gST->ConOut, Line);
-    return;
+  if (EFI_ERROR (Status) || (BlockIoCount == 0)) {
+    return;   // no storage: stop here, bands below will be absent
   }
-
-  UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %d block device(s)\r\n", (UINT32)BlockIoCount);
-  gST->ConOut->OutputString (gST->ConOut, Line);
   gBS->FreePool (Handles);
+  Band (Gop, 1, 0x00, 0xFF, 0x00);
 
-  //
-  // The partition inventory, with names, so a mismatch is visible.
-  //
+  // Band 2: partitions enumerated.
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiPartitionInfoProtocolGuid, NULL, &Count, &Handles);
-  if (EFI_ERROR (Status)) {
-    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: no partition info %r\r\n", Status);
-    gST->ConOut->OutputString (gST->ConOut, Line);
+  if (EFI_ERROR (Status) || (Count == 0)) {
     return;
   }
-
-  UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %d partition(s)\r\n", (UINT32)Count);
-  gST->ConOut->OutputString (gST->ConOut, Line);
-
-  for (UINTN i = 0; i < Count; i++) {
-    EFI_PARTITION_INFO_PROTOCOL *Info;
-
-    if (EFI_ERROR (gBS->HandleProtocol (Handles[i], &gEfiPartitionInfoProtocolGuid, (VOID **)&Info))) {
-      continue;
-    }
-
-    UnicodeSPrint (Line, sizeof (Line), L"  [%d] t=%d %s\r\n", (UINT32)i, (UINT32)Info->Type, Info->Info.Gpt.PartitionName);
-    gST->ConOut->OutputString (gST->ConOut, Line);
-  }
-
   gBS->FreePool (Handles);
+  Band (Gop, 2, 0x00, 0x00, 0xFF);
 
-  //
-  // And the actual lookup the loader will use.
-  //
+  // Band 3: the log partition resolved by name.
   Target = FindPartition (XNU_LOG_PARTITION);
   if (Target == NULL) {
-    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %s not found\r\n", XNU_LOG_PARTITION);
-    gST->ConOut->OutputString (gST->ConOut, Line);
     return;
   }
+  Band (Gop, 3, 0xFF, 0xFF, 0x00);
 
-  UnicodeSPrint (
-    Line,
-    sizeof (Line),
-    L"XNULOADER: %s found, block size %d\r\n",
-    XNU_LOG_PARTITION,
-    (UINT32)Target->Media->BlockSize
-    );
-  gST->ConOut->OutputString (gST->ConOut, Line);
-
+  // Band 4: the probe write succeeded.
   mLog = AllocateZeroPool (SIZE_4KB);
   if (mLog != NULL) {
     Log ("== XNULOADER DIAG ==\n");
-    Log ("this text was written by the firmware into the log partition\n");
+    Log ("written by the firmware into the log partition\n");
     Status = Target->WriteBlocks (Target, Target->Media->MediaId, 0, ALIGN_VALUE (mLogLen, Target->Media->BlockSize), mLog);
-    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: probe write %r\r\n", Status);
-    gST->ConOut->OutputString (gST->ConOut, Line);
+    if (!EFI_ERROR (Status)) {
+      Band (Gop, 4, 0xFF, 0xFF, 0xFF);
+    }
     FreePool (mLog);
-    mLog = NULL;
+    mLog    = NULL;
     mLogLen = 0;
   }
+
+  // Keep the console write too: harmless if it works, ignored if it does not.
+  gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: diagnostics done\r\n");
+  (VOID)Line;
 }
 
 VOID
