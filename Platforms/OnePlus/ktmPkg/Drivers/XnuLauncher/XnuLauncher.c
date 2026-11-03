@@ -1,12 +1,15 @@
 /** @file
-  XnuLauncher - start the HakiOS xnuloader during DXE.
+  XnuLauncher - start the HakiOS xnuloader once BDS has finished.
 
-  Mu-Silicium's BDS does not auto-start FILE APPLICATION entries contained in the
-  firmware volume, so this driver finds the embedded xnuloader by GUID, loads it
-  with LoadImage() and hands control to it with StartImage().
+  Mu-Silicium's BDS neither auto-starts FILE APPLICATION entries from the firmware
+  volume nor keeps the console: it repaints the Silicium logo and clears the
+  screen after DXE completes. Anything this driver prints during its entry point
+  is therefore wiped before a human can read it, which made it impossible to tell
+  a working handoff from a driver that never ran.
 
-  Every step also goes to ConOut: the phone has no serial console during bring-up,
-  so the screen is the only place these diagnostics can be read.
+  So the work is deferred to ReadyToBoot, which fires after BDS has enumerated
+  boot options and cleared the console, immediately before boot services are torn
+  down. Everything printed there stays on screen.
 
   The loader is embedded by ktmPkg/Include/RAW.inc as
     FILE APPLICATION = 3E7A9C41-58B2-4D6F-9A03-C1D5E8F24B70 { SECTION PE32 = ... }
@@ -24,7 +27,8 @@
 #define XNU_LOADER_GUID \
   { 0x3E7A9C41, 0x58B2, 0x4D6F, { 0x9A, 0x03, 0xC1, 0xD5, 0xE8, 0xF2, 0x4B, 0x70 } }
 
-STATIC EFI_GUID  mXnuLoaderGuid = XNU_LOADER_GUID;
+STATIC EFI_GUID   mXnuLoaderGuid = XNU_LOADER_GUID;
+STATIC EFI_EVENT  mReadyToBootEvent = NULL;
 
 STATIC
 VOID
@@ -119,13 +123,14 @@ ReadXnuLoader (
 }
 
 /**
-  Driver entry point: load and start xnuloader.
+  ReadyToBoot callback: BDS has finished and the console is ours.
 **/
-EFI_STATUS
+STATIC
+VOID
 EFIAPI
-XnuLauncherEntry (
-  IN EFI_HANDLE         ImageHandle,
-  IN EFI_SYSTEM_TABLE  *SystemTable
+OnReadyToBoot (
+  IN EFI_EVENT  Event,
+  IN VOID      *Context
   )
 {
   EFI_STATUS  Status;
@@ -134,17 +139,17 @@ XnuLauncherEntry (
   EFI_HANDLE  LoaderHandle;
   CHAR16      Line[96];
 
-  Say (L"XnuLauncher: entry\r\n");
+  Say (L"\r\nXnuLauncher: ReadyToBoot\r\n");
 
   Status = ReadXnuLoader (&Image, &ImageSize);
   if (EFI_ERROR (Status)) {
-    return EFI_SUCCESS;   /* no loader embedded: stay out of the boot path */
+    return;
   }
 
   LoaderHandle = NULL;
   Status = gBS->LoadImage (
                   FALSE,
-                  ImageHandle,
+                  gImageHandle,
                   NULL,
                   Image,
                   ImageSize,
@@ -154,17 +159,42 @@ XnuLauncherEntry (
     UnicodeSPrint (Line, sizeof (Line), L"XnuLauncher: LoadImage failed %r\r\n", Status);
     Say (Line);
     gBS->FreePool (Image);
-    return Status;
+    return;
   }
 
-  Say (L"XnuLauncher: starting loader\r\n");
+  Say (L"XnuLauncher: starting xnuloader\r\n");
   gBS->FreePool (Image);
 
   Status = gBS->StartImage (LoaderHandle, NULL, NULL);
-  UnicodeSPrint (Line, sizeof (Line), L"XnuLauncher: loader returned %r\r\n", Status);
+  UnicodeSPrint (Line, sizeof (Line), L"XnuLauncher: xnuloader returned %r\r\n", Status);
   Say (Line);
-
-  return EFI_SUCCESS;
 }
 
-/* build trigger: dispatch confirmation */
+/**
+  Driver entry point: register the deferred handoff.
+**/
+EFI_STATUS
+EFIAPI
+XnuLauncherEntry (
+  IN EFI_HANDLE         ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
+  )
+{
+  EFI_STATUS  Status;
+
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_CALLBACK,
+                  OnReadyToBoot,
+                  NULL,
+                  &gEfiEventReadyToBootGuid,
+                  &mReadyToBootEvent
+                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "XnuLauncher: CreateEventEx failed %r\n", Status));
+    return Status;
+  }
+
+  DEBUG ((DEBUG_INFO, "XnuLauncher: armed for ReadyToBoot\n"));
+  return EFI_SUCCESS;
+}

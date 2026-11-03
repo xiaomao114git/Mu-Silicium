@@ -1,8 +1,8 @@
 ## @file
-#  XnuLauncher - DXE driver that loads and starts the embedded HakiOS xnuloader.
+#  XnuLauncher - DXE driver that hands off to the HakiOS xnuloader at ReadyToBoot.
 #
-#  Mu-Silicium's BDS does not auto-start FILE APPLICATION entries inside the
-#  firmware volume, so this driver performs the handoff to XNU itself.
+#  The handoff is deferred to ReadyToBoot because Mu-Silicium's BDS clears the
+#  console after DXE, hiding anything printed during the entry point.
 ##
 
 [Defines]
@@ -25,7 +25,11 @@
   PrintLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
+  UefiLib
   MemoryAllocationLib
+
+[Guids]
+  gEfiEventReadyToBootGuid
 
 [Protocols]
   gEfiFirmwareVolume2ProtocolGuid
