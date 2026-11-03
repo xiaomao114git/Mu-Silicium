@@ -327,15 +327,18 @@ XnuLoaderDiagnostics ()
   //
   Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop);
   if (!EFI_ERROR (Status) && (Gop->Mode != NULL) && (Gop->Mode->Info != NULL)) {
-    Red.Blue  = 0x00;
-    Red.Green = 0x00;
-    Red.Red   = 0xFF;
+    Red.Blue     = 0x00;
+    Red.Green    = 0x00;
+    Red.Red      = 0xFF;
     Red.Reserved = 0;
-    gBS->StretchBlt (
-           &Gop->Blt[0],
+    Gop->Blt (
+           Gop,
            &Red,
            EfiBltVideoFill,
-           0, 0, 0, 0,
+           0,
+           0,
+           0,
+           0,
            Gop->Mode->Info->HorizontalResolution,
            80,
            0
