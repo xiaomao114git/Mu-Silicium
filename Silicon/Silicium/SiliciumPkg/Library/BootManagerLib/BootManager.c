@@ -112,6 +112,13 @@ PlatformBootManagerAfterConsole ()
     DEBUG ((EFI_D_ERROR, "%a: Failed to Display Boot Logo! Status = %r\n", __FUNCTION__, Status));
   }
 
+  //
+  // Bring-up diagnostics, right after the logo and before anything that might
+  // reconfigure the console. Reports what storage the firmware can see and
+  // whether the log partition accepts a write; starts nothing, resets nothing.
+  //
+  XnuLoaderDiagnostics ();
+
   // Register Key Callback
   Status = RegisterKeyCallback ((EFI_DEVICE_PATH_PROTOCOL *)&KeypadDevicePath);
   if (!EFI_ERROR (Status) && GopProtocol != NULL) {
@@ -126,13 +133,6 @@ PlatformBootManagerAfterConsole ()
 
   // Execute Secondary After Console
   DeviceBootManagerAfterConsole ();
-
-  //
-  // Bring-up diagnostics: the console works and every disk driver has been
-  // dispatched here, so this reports what the firmware can actually see. It
-  // starts nothing and does not reset.
-  //
-  XnuLoaderDiagnostics ();
 }
 
 VOID
