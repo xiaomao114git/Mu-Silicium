@@ -464,6 +464,43 @@ XnuLoaderDiagnostics ()
 
     if ((Header->Magic == XNU_PAYLOAD_MAGIC) && (Header->Size != 0) && (Header->Size <= XNU_PAYLOAD_MAX_SIZE)) {
       Band (Gop, 13, 0x00, 0xFF, 0xFF);   // cyan: payload present and plausible
+
+      //
+      // Walk the entries for "loader.efi" and try to start it right here, while
+      // GOP and the console are both still alive. Doing this at UnableToBoot
+      // gained nothing visible because the display is gone by then.
+      //
+      UINT8 *Cursor = (UINT8 *)(Header + 1);
+      UINT8 *End    = Cursor + Header->Size;
+
+      while (Cursor + sizeof (XNU_PAYLOAD_ENTRY) <= End) {
+        XNU_PAYLOAD_ENTRY *Entry = (XNU_PAYLOAD_ENTRY *)Cursor;
+
+        if (Entry->Name[0] == 0) {
+          break;
+        }
+
+        if (AsciiStrnCmp (Entry->Name, "loader.efi", sizeof (Entry->Name)) == 0) {
+          EFI_HANDLE Handle = NULL;
+
+          Band (Gop, 14, 0xFF, 0x00, 0xFF);   // magenta: the entry was found
+
+          Status = gBS->LoadImage (FALSE, gImageHandle, NULL, Entry + 1, Entry->Size, &Handle);
+          if (!EFI_ERROR (Status)) {
+            Band (Gop, 15, 0x80, 0x00, 0xFF); // violet: LoadImage succeeded
+
+            //
+            // If this returns, the loader did not take over. Orange marks that.
+            //
+            Status = gBS->StartImage (Handle, NULL, NULL);
+            Band (Gop, 16, 0xFF, 0x80, 0x00);
+          }
+
+          break;
+        }
+
+        Cursor += sizeof (XNU_PAYLOAD_ENTRY) + ALIGN_VALUE (Entry->Size, 16);
+      }
     }
   }
 }
