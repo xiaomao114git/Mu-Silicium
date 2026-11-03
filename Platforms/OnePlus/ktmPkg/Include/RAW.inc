@@ -455,11 +455,6 @@
     SECTION RAW = Binaries/dodge/RawFiles/uefipil.cfg
   }
 
-  # HakiOS xnuloader: the UEFI application that hands off to the XNU kernel.
-  # prebuilt/loader.efi from hackios-xnu-kernel is the Apple-data-free build
-  # (it can start the open kernel, not Darwin); it is embedded here so the
-  # firmware can run it without any FAT partition or shell interaction.
-  FILE APPLICATION = 3E7A9C41-58B2-4D6F-9A03-C1D5E8F24B70 {
-    SECTION UI = "xnuloader"
-    SECTION PE32 = ktmPkg/RawFiles/loader.efi
-  }
+  # The XNU loader is no longer embedded in the firmware volume: it travels in the
+  # XNUP payload that BootShim copies to 0xF0000000, which is how HakiOS does it and
+  # what keeps FD_SIZE at K90's 0x300000.

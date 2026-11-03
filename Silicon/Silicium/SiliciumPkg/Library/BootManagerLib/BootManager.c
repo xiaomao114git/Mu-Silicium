@@ -112,13 +112,6 @@ PlatformBootManagerAfterConsole ()
     DEBUG ((EFI_D_ERROR, "%a: Failed to Display Boot Logo! Status = %r\n", __FUNCTION__, Status));
   }
 
-  //
-  // Bring-up diagnostics, right after the logo and before anything that might
-  // reconfigure the console. Reports what storage the firmware can see and
-  // whether the log partition accepts a write; starts nothing, resets nothing.
-  //
-  XnuLoaderDiagnostics ();
-
   // Register Key Callback
   Status = RegisterKeyCallback ((EFI_DEVICE_PATH_PROTOCOL *)&KeypadDevicePath);
   if (!EFI_ERROR (Status) && GopProtocol != NULL) {
