@@ -137,17 +137,17 @@ XnuLauncherEntry (
   Say (L"XnuLauncher: entry\r\n");
 
   //
-  // Bring-up diagnostic: hold here so the message cannot be overwritten by the
-  // BDS logo and a screen clear. If this line is never seen, the driver was not
-  // dispatched at all. Remove the loop once dispatch is confirmed.
+  // Bring-up bisect: fault on purpose.
+  //
+  // ConOut output during DXE is being overwritten before anyone can read it, and
+  // a 30 s stall at entry produced nothing visible either. So make the proof
+  // impossible to miss: dereference an unmapped address. If the firmware shows a
+  // Synchronous Exception, this driver ran. If it boots to the logo and exits as
+  // before, the driver is not being dispatched at all.
   //
   {
-    UINTN  Waited;
-    for (Waited = 0; Waited < 30; Waited++) {
-      gBS->Stall (1000000);   /* 1 s per iteration, 30 s total */
-      Say (L".");
-    }
-    Say (L"\r\nXnuLauncher: continuing\r\n");
+    volatile UINT32  *Nowhere = (volatile UINT32 *)(UINTN)0x00000000DEADB000ULL;
+    *Nowhere = 0x584E554C;   /* 'XNUL' */
   }
 
   Status = ReadXnuLoader (&Image, &ImageSize);
