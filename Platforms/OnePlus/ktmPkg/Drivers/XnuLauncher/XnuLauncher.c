@@ -180,3 +180,5 @@ XnuLauncherEntry (
 
   return EFI_SUCCESS;
 }
+
+/* build trigger: dispatch confirmation */
