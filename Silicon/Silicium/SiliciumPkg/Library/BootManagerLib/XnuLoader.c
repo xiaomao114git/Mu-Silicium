@@ -216,6 +216,12 @@ FlushLog ()
 
   BlockIo = FindPartition (XNU_LOG_PARTITION);
   if (BlockIo == NULL) {
+    //
+    // No log partition under that name. Say so on the console: after BDS has
+    // cleared the screen this is the only channel left, and a silent failure
+    // here is indistinguishable from the loader never running.
+    //
+    gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: log partition not found\r\n");
     return;
   }
 
@@ -225,6 +231,9 @@ FlushLog ()
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, 0, WriteSize, mLog);
   if (!EFI_ERROR (Status)) {
     BlockIo->FlushBlocks (BlockIo);
+    gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: log written\r\n");
+  } else {
+    gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: log write failed\r\n");
   }
 }
 
@@ -274,8 +283,18 @@ XnuLoaderMain ()
 {
   EFI_TIME Time;
 
+  //
+  // Announce on the console first. BDS has already cleared the screen by the
+  // time this runs, so these lines stay visible - unlike anything printed during
+  // DXE - and they distinguish "loader never ran" from "loader ran but could not
+  // log" without needing the log partition at all.
+  //
+  gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: entered\r\n");
+
   // Normally does not return
   StartPayloadLoader ();
+
+  gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: no payload loader, writing log\r\n");
 
   mLog = AllocateZeroPool (LOG_SIZE);
   if (mLog != NULL) {
@@ -300,5 +319,7 @@ XnuLoaderMain ()
   }
 
   // The phone is unattended: always come back to Android.
+  gST->ConOut->OutputString (gST->ConOut, L"XNULOADER: cold reset\r\n");
+  gBS->Stall (2000000);
   gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
 }
