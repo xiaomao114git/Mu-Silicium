@@ -42,10 +42,17 @@ def build_xnup(entries):
 def main():
     argv = sys.argv[1:]
     cmdline = None
+    flags = []
     if "--cmdline" in argv:
         i = argv.index("--cmdline")
         cmdline = argv[i + 1]
         del argv[i:i + 2]
+    # --usb: make the loader stay resident and take commands over USB instead of
+    # sending the phone straight back down. Needed whenever the loader is written to
+    # a boot partition, where a reset would start it again in a loop.
+    if "--usb" in argv:
+        argv.remove("--usb")
+        flags.append(("usb", b"1\0"))
     if len(argv) < 3:
         sys.exit(__doc__)
 
@@ -58,6 +65,7 @@ def main():
         items.append((name, open(path, "rb").read()))
     if cmdline is not None:
         items.append(("cmdline", cmdline.encode() + b"\0"))
+    items.extend(flags)
 
     img = bytearray(open(img_path, "rb").read())
     if img[:8] != b"ANDROID!":
