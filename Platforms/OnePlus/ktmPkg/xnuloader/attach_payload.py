@@ -20,16 +20,20 @@ XNUP_MAGIC = 0x50554E58  # "XNUP"
 
 
 def gunzip_prefix(buf):
-    """Return (payload_bytes, consumed) for the gzip stream at the start of buf."""
-    lo, hi = 0, len(buf)
-    while hi - lo > 7:
-        mid = (lo + hi) // 2
-        try:
-            gzip.decompress(buf[:mid])
-            lo = mid
-        except Exception:
-            hi = mid
-    return gzip.decompress(buf[:lo]), lo
+    """Return (payload_bytes, consumed) for the gzip stream at the start of buf.
+
+    zlib's decompressobj reports exactly where the gzip member ends via
+    unused_data, which is what separates the compressed FD from the DTB that
+    follows it. A bisection over gzip.decompress() guesses at this and can land on
+    a short prefix, silently dropping the firmware volume.
+    """
+    d = zlib.decompressobj(16 + zlib.MAX_WBITS)  # 16 = gzip wrapper
+    out = d.decompress(buf)
+    out += d.flush()
+    if not d.eof:
+        raise ValueError("gzip stream is truncated")
+    consumed = len(buf) - len(d.unused_data)
+    return out, consumed
 
 
 def build_xnup(entries):
