@@ -1,4 +1,5 @@
 name: Build UEFI for ktm
+# trigger probe
 
 on:
   workflow_dispatch:
@@ -32,6 +33,7 @@ jobs:
         run: bash ./setup_env.sh -p apt
 
       - name: Build UEFI for ktm
+# trigger probe
         run: python3 build_uefi.py -d ktm -r DEBUG
 
       - name: List build output
