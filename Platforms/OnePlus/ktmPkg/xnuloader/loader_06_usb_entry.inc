@@ -649,15 +649,31 @@ fb_command(char *cmd)
 				log_buf[log_len] = 0;
 				fb_reply("OKAY", log_buf + mark);
 				log_len = mark;
-			} else if (str_eq(var, "full-log")) {
+			} else if (starts_with(var, "full-log")) {
 				/*
-				 * Everything in the buffer, not the increment: "screen" hands back only what
-				 * was written since the previous call and then drops it, so a kernel's own log
-				 * - written before that mark - could never be read out. This one answers with
-				 * the whole record and leaves the buffer alone.
+				 * The whole buffer from an offset, a piece at a time: "screen" hands back only
+				 * what was written since the previous call and then drops it, so a kernel's own
+				 * log - written before that mark - could never be read out. fastboot caps what
+				 * one reply may carry, so the host asks for "full-log:N" and walks N forward.
+				 * Newlines become '|': a reply is one line.
 				 */
-				log_buf[log_len] = 0;
-				fb_reply("OKAY", log_buf);
+				uint64_t off = (var[8] == ':') ? parse_number(var + 9, 10) : 0;
+				if (off >= log_len) {
+					fb_reply("OKAY", "");
+				} else {
+					char piece[208];
+					uint64_t n = log_len - off;
+
+					if (n > 200) {
+						n = 200;
+					}
+					for (uint64_t i = 0; i < n; i++) {
+						char ch = log_buf[off + i];
+						piece[i] = (ch == '\n' || ch == '\r') ? '|' : ch;
+					}
+					piece[n] = 0;
+					fb_reply("OKAY", piece);
+				}
 			} else {
 				fb_reply("OKAY", "");
 			}
