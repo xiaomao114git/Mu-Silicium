@@ -453,6 +453,19 @@ XnuLoaderDiagnostics ()
   // Keep the console write too: harmless if it works, ignored if it does not.
   gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: diagnostics done\r\n");
   (VOID)Line;
+
+  //
+  // Band 13: an "XNUP" container is sitting at the payload base, i.e. BootShim
+  // copied what was appended behind the UEFI image. This is the check that says
+  // whether the handoff can ever start a loader.
+  //
+  {
+    XNU_PAYLOAD_HEADER *Header = (XNU_PAYLOAD_HEADER *)XNU_PAYLOAD_BASE;
+
+    if ((Header->Magic == XNU_PAYLOAD_MAGIC) && (Header->Size != 0) && (Header->Size <= XNU_PAYLOAD_MAX_SIZE)) {
+      Band (Gop, 13, 0x00, 0xFF, 0xFF);   // cyan: payload present and plausible
+    }
+  }
 }
 
 VOID

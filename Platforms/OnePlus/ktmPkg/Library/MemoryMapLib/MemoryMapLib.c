@@ -36,6 +36,16 @@ gMemoryDescriptor[] = {
   // which is the gunyah_hyp_region1 reservation plus a hole with no DRAM behind it.
   // Use the large contiguous window and stay inside it.
   {"DXE_Heap",           0xBE360000, 0x16000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK_XN},
+  //
+  // XNU payload window. BootShim copies the "XNUP" container appended behind the
+  // UEFI image to 0xF0000000, and XnuLoader reads it from there. It must be
+  // reserved so the firmware allocator never hands these pages out.
+  //
+  // 0xF0000000..0xF3800000 is free on this phone: trust_ui_vm_region occupies
+  // 0xF3800000..0xF7C00000. Keep XNU_PAYLOAD_MAX_SIZE within that 56 MB.
+  //
+  {"XNU_Payload",        0xF0000000, 0x03800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+
   {"Display_Reserved",   0xFC800000, 0x02B00000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
 
   // Other Memory Regions

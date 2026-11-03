@@ -5,8 +5,11 @@
 // The boot shim copies everything appended after the UEFI FD to this address.
 // The region is marked reserved in the device memory map.
 //
+// 0xF0000000..0xF3800000 is free on this phone: trust_ui_vm_region starts at
+// 0xF3800000, so the window is 56 MB and must not grow past it.
+//
 #define XNU_PAYLOAD_BASE      0xF0000000ULL
-#define XNU_PAYLOAD_MAX_SIZE  0x04000000ULL
+#define XNU_PAYLOAD_MAX_SIZE  0x03800000ULL
 #define XNU_PAYLOAD_MAGIC     0x50554E58 // "XNUP"
 
 typedef struct {

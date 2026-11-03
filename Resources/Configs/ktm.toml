@@ -3,6 +3,9 @@
 #
 [boot_shim]
 requires_kernel_header = true
+# Where BootShim copies an "XNUP" container appended after the UEFI image.
+# 0xF0000000..0xF3800000 is free here (trust_ui_vm_region starts at 0xF3800000).
+payload_base = 0xF0000000
 
 #
 # UEFI FD Configs
