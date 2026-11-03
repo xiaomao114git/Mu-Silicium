@@ -300,6 +300,99 @@ StartPayloadLoader ()
   }
 }
 
+/**
+  Diagnostics called from PlatformBootManagerAfterConsole.
+
+  At that point the logo has been drawn, every DXE driver has been dispatched and
+  the console still works, so both the screen and the block devices are usable.
+  Enumerates what storage the firmware can actually see and reports whether the
+  log partition was found and written - without starting anything.
+**/
+VOID
+XnuLoaderDiagnostics ()
+{
+  EFI_STATUS              Status;
+  EFI_HANDLE             *Handles;
+  UINTN                   Count;
+  UINTN                   BlockIoCount;
+  CHAR16                  Line[128];
+  EFI_BLOCK_IO_PROTOCOL  *Target;
+
+  gST->ConOut->OutputString (gST->ConOut, L"\r\nXNULOADER: diagnostics\r\n");
+
+  //
+  // How many raw block devices exist? If this is zero, no storage driver produced
+  // a device and no partition lookup can ever succeed.
+  //
+  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &BlockIoCount, &Handles);
+  if (EFI_ERROR (Status)) {
+    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: blockio unavailable %r\r\n", Status);
+    gST->ConOut->OutputString (gST->ConOut, Line);
+    return;
+  }
+
+  UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %d block device(s)\r\n", (UINT32)BlockIoCount);
+  gST->ConOut->OutputString (gST->ConOut, Line);
+  gBS->FreePool (Handles);
+
+  //
+  // The partition inventory, with names, so a mismatch is visible.
+  //
+  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiPartitionInfoProtocolGuid, NULL, &Count, &Handles);
+  if (EFI_ERROR (Status)) {
+    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: no partition info %r\r\n", Status);
+    gST->ConOut->OutputString (gST->ConOut, Line);
+    return;
+  }
+
+  UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %d partition(s)\r\n", (UINT32)Count);
+  gST->ConOut->OutputString (gST->ConOut, Line);
+
+  for (UINTN i = 0; i < Count; i++) {
+    EFI_PARTITION_INFO_PROTOCOL *Info;
+
+    if (EFI_ERROR (gBS->HandleProtocol (Handles[i], &gEfiPartitionInfoProtocolGuid, (VOID **)&Info))) {
+      continue;
+    }
+
+    UnicodeSPrint (Line, sizeof (Line), L"  [%d] t=%d %s\r\n", (UINT32)i, (UINT32)Info->Type, Info->Info.Gpt.PartitionName);
+    gST->ConOut->OutputString (gST->ConOut, Line);
+  }
+
+  gBS->FreePool (Handles);
+
+  //
+  // And the actual lookup the loader will use.
+  //
+  Target = FindPartition (XNU_LOG_PARTITION);
+  if (Target == NULL) {
+    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: %s not found\r\n", XNU_LOG_PARTITION);
+    gST->ConOut->OutputString (gST->ConOut, Line);
+    return;
+  }
+
+  UnicodeSPrint (
+    Line,
+    sizeof (Line),
+    L"XNULOADER: %s found, block size %d\r\n",
+    XNU_LOG_PARTITION,
+    (UINT32)Target->Media->BlockSize
+    );
+  gST->ConOut->OutputString (gST->ConOut, Line);
+
+  mLog = AllocateZeroPool (SIZE_4KB);
+  if (mLog != NULL) {
+    Log ("== XNULOADER DIAG ==\n");
+    Log ("this text was written by the firmware into the log partition\n");
+    Status = Target->WriteBlocks (Target, Target->Media->MediaId, 0, ALIGN_VALUE (mLogLen, Target->Media->BlockSize), mLog);
+    UnicodeSPrint (Line, sizeof (Line), L"XNULOADER: probe write %r\r\n", Status);
+    gST->ConOut->OutputString (gST->ConOut, Line);
+    FreePool (mLog);
+    mLog = NULL;
+    mLogLen = 0;
+  }
+}
+
 VOID
 XnuLoaderMain ()
 {

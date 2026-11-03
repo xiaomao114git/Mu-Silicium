@@ -30,4 +30,12 @@ typedef struct {
 VOID
 XnuLoaderMain ();
 
+//
+// Pure diagnostics, run from PlatformBootManagerAfterConsole while the console and
+// every disk driver are still alive. Prints the block device inventory and tries
+// the log partition, but starts nothing and never resets.
+//
+VOID
+XnuLoaderDiagnostics ();
+
 #endif /* _XNU_LOADER_H_ */

@@ -126,6 +126,13 @@ PlatformBootManagerAfterConsole ()
 
   // Execute Secondary After Console
   DeviceBootManagerAfterConsole ();
+
+  //
+  // Bring-up diagnostics: the console works and every disk driver has been
+  // dispatched here, so this reports what the firmware can actually see. It
+  // starts nothing and does not reset.
+  //
+  XnuLoaderDiagnostics ();
 }
 
 VOID
